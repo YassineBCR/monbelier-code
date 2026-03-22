@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { HomePage } from './components/HomePage';
 import { OrderForm } from './components/OrderForm';
@@ -7,8 +7,15 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { LivreurDashboard } from './components/LivreurDashboard';
 
 function AppContent() {
-  const [currentView, setCurrentView] = useState<'home' | 'order' | 'login'>('home');
   const { user, loading, isAdmin, isLivreur } = useAuth();
+  const [currentView, setCurrentView] = useState<'home' | 'order' | 'login' | 'dashboard'>('home');
+
+  // Rediriger vers le dashboard automatiquement juste après une connexion réussie
+  useEffect(() => {
+    if (user && currentView === 'login') {
+      setCurrentView('dashboard');
+    }
+  }, [user, currentView]);
 
   if (loading) {
     return (
@@ -21,12 +28,34 @@ function AppContent() {
     );
   }
 
-  if (user && isAdmin) {
-    return <AdminDashboard />;
-  }
-
-  if (user && isLivreur) {
-    return <LivreurDashboard />;
+  // Affichage des dashboards avec un bouton flottant pour revenir à l'accueil
+  if (currentView === 'dashboard' && user) {
+    if (isAdmin) {
+      return (
+        <>
+          <AdminDashboard />
+          <button
+            onClick={() => setCurrentView('home')}
+            className="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-700 transition-all shadow-lg z-50"
+          >
+            Retour à l'accueil
+          </button>
+        </>
+      );
+    }
+    if (isLivreur) {
+      return (
+        <>
+          <LivreurDashboard />
+          <button
+            onClick={() => setCurrentView('home')}
+            className="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-700 transition-all shadow-lg z-50"
+          >
+            Retour à l'accueil
+          </button>
+        </>
+      );
+    }
   }
 
   if (!user && currentView === 'login') {
@@ -39,13 +68,19 @@ function AppContent() {
 
   return (
     <>
-      <HomePage onOrderClick={() => setCurrentView('order')} />
-      <button
-        onClick={() => setCurrentView('login')}
-        className="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-700 transition-all shadow-lg"
-      >
-        Espace Pro
-      </button>
+      <HomePage 
+        onOrderClick={() => setCurrentView('order')} 
+        onDashboardClick={() => setCurrentView('dashboard')} 
+      />
+      {/* Cacher le bouton "Espace Pro" si l'utilisateur est déjà connecté */}
+      {!user && (
+        <button
+          onClick={() => setCurrentView('login')}
+          className="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-700 transition-all shadow-lg"
+        >
+          Espace Pro
+        </button>
+      )}
     </>
   );
 }

@@ -1,283 +1,317 @@
-import { useState } from 'react';
-import { ArrowLeft, Loader2, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { 
+  ArrowLeft, ChevronRight, ChevronLeft, CreditCard, 
+  CheckCircle2, MapPin, User, Package, ShieldCheck, Loader2 
+} from 'lucide-react';
 
 interface OrderFormProps {
   onBack: () => void;
 }
 
 export function OrderForm({ onBack }: OrderFormProps) {
+  const { user, profile } = useAuth();
+  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [orderNumber, setOrderNumber] = useState('');
+  const [error, setError] = useState('');
+  const [orderData, setOrderData] = useState<any>(null);
+
   const [formData, setFormData] = useState({
     client_prenom: '',
-    client_nom: '',
-    client_email: '',
-    client_telephone: '',
+    client_nom: profile?.nom || '',
+    client_email: user?.email || '',
+    client_telephone: profile?.telephone || '',
+    quantite: 1,
+    nom_sacrifice: '',
     adresse_livraison: '',
     code_postal: '',
     ville: '',
-    nom_sacrifice: '',
-    date_livraison_souhaitee: '',
-    notes: '',
+    notes: ''
   });
 
+  const prixUnitaire = 350;
+  const total = formData.quantite * prixUnitaire;
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }));
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const nextStep = () => setStep((prev) => Math.min(prev + 1, 4));
+  const prevStep = () => setStep((prev) => Math.max(prev - 1, 1));
+
+  const handleSubmit = async () => {
     setLoading(true);
+    setError('');
 
     try {
-      const { data, error } = await supabase
+      // 1. Enregistrement en base de données
+      const { data, error: submitError } = await supabase
         .from('orders')
-        .insert([{
-          ...formData,
-          prix: 350,
+        .insert({
+          client_prenom: formData.client_prenom,
+          client_nom: formData.client_nom,
+          client_email: formData.client_email,
+          client_telephone: formData.client_telephone,
+          quantite: formData.quantite,
+          nom_sacrifice: formData.nom_sacrifice,
+          adresse_livraison: formData.adresse_livraison,
+          code_postal: formData.code_postal,
+          ville: formData.ville,
+          notes: formData.notes,
+          prix: total,
           statut: 'en_attente',
-          payment_status: 'paid'
-        }])
+          payment_status: 'paid' // Simulé comme payé pour l'exemple
+        })
         .select()
         .single();
 
-      if (error) throw error;
+      if (submitError) throw submitError;
 
-      setOrderNumber(data.numero_commande);
-      setSuccess(true);
-    } catch (error) {
-      console.error('Error creating order:', error);
-      alert('Une erreur est survenue. Veuillez réessayer.');
+      // 2. Passage à l'étape succès
+      setOrderData(data);
+      setStep(5);
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de la validation de la commande');
     } finally {
       setLoading(false);
     }
   };
 
-  if (success) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-white flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
-          <CheckCircle className="h-16 w-16 text-emerald-600 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">
-            Commande confirmée !
-          </h2>
-          <p className="text-gray-600 mb-6">
-            Votre numéro de commande est :
-          </p>
-          <div className="bg-emerald-50 rounded-lg p-4 mb-6">
-            <p className="text-2xl font-bold text-emerald-600">{orderNumber}</p>
-          </div>
-          <p className="text-gray-600 mb-8">
-            Nous vous contacterons prochainement pour confirmer les détails de livraison.
-            Un email de confirmation a été envoyé à {formData.client_email}.
-          </p>
-          <button
-            onClick={onBack}
-            className="bg-emerald-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-emerald-700 transition-all w-full"
-          >
-            Retour à l'accueil
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-white py-12 px-4">
-      <div className="max-w-3xl mx-auto">
-        <button
-          onClick={onBack}
-          className="flex items-center text-emerald-600 hover:text-emerald-700 mb-6 font-semibold transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5 mr-2" />
-          Retour
-        </button>
+    <div className="min-h-screen bg-[#f8fafc] relative overflow-hidden font-sans py-12 px-4 sm:px-6 lg:px-8 flex flex-col items-center">
+      {/* ARRIÈRE-PLAN ANIMÉ */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 fixed">
+        <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-emerald-300/30 rounded-full mix-blend-multiply filter blur-[100px] animate-blob"></div>
+        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-teal-300/30 rounded-full mix-blend-multiply filter blur-[100px] animate-blob animation-delay-2000"></div>
+      </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-8 lg:p-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">
-            Commander votre agneau
-          </h2>
-          <p className="text-gray-600 mb-8">
-            Remplissez ce formulaire pour réserver votre agneau pour l'Aïd.
-          </p>
+      <div className="w-full max-w-3xl relative z-10">
+        {step < 5 && (
+          <button onClick={onBack} className="text-slate-500 hover:text-emerald-700 flex items-center gap-2 mb-8 transition-colors font-medium">
+            <ArrowLeft className="w-5 h-5" /> Retour à l'accueil
+          </button>
+        )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Prénom *
-                </label>
-                <input
-                  type="text"
-                  name="client_prenom"
-                  required
-                  value={formData.client_prenom}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                />
+        {/* CONTENEUR PRINCIPAL GLASSMORPHISM */}
+        <div className="bg-white/70 backdrop-blur-xl border border-white/60 shadow-2xl shadow-emerald-900/10 rounded-[2rem] p-8 md:p-12 transition-all duration-500">
+          
+          {/* PROGRESS BAR (Cachée sur l'écran de succès) */}
+          {step < 5 && (
+            <div className="mb-10">
+              <div className="flex justify-between items-center mb-4">
+                {[
+                  { id: 1, icon: User, label: 'Contact' },
+                  { id: 2, icon: Package, label: 'Commande' },
+                  { id: 3, icon: MapPin, label: 'Livraison' },
+                  { id: 4, icon: CreditCard, label: 'Paiement' },
+                ].map((s) => (
+                  <div key={s.id} className={`flex flex-col items-center gap-2 ${step >= s.id ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${step >= s.id ? 'border-emerald-500 bg-emerald-50 shadow-lg shadow-emerald-500/20' : 'border-slate-200 bg-white'}`}>
+                      <s.icon className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-bold uppercase tracking-wider hidden sm:block">{s.label}</span>
+                  </div>
+                ))}
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Nom *
-                </label>
-                <input
-                  type="text"
-                  name="client_nom"
-                  required
-                  value={formData.client_nom}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                />
+              <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all duration-500 ease-out"
+                  style={{ width: `${((step - 1) / 3) * 100}%` }}
+                ></div>
               </div>
             </div>
+          )}
 
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  name="client_email"
-                  required
-                  value={formData.client_email}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                />
+          {/* CONTENU DES ÉTAPES */}
+          <div className="min-h-[300px]">
+            {/* ÉTAPE 1 : CONTACT */}
+            {step === 1 && (
+              <div className="animate-[fadeIn_0.5s_ease-out]">
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-6">Vos informations</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Prénom</label>
+                    <input type="text" name="client_prenom" value={formData.client_prenom} onChange={handleChange} className="w-full px-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Nom</label>
+                    <input type="text" name="client_nom" value={formData.client_nom} onChange={handleChange} className="w-full px-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Email</label>
+                    <input type="email" name="client_email" value={formData.client_email} onChange={handleChange} className="w-full px-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Téléphone</label>
+                    <input type="tel" name="client_telephone" value={formData.client_telephone} onChange={handleChange} className="w-full px-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all" required />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Téléphone *
-                </label>
-                <input
-                  type="tel"
-                  name="client_telephone"
-                  required
-                  value={formData.client_telephone}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                />
+            )}
+
+            {/* ÉTAPE 2 : COMMANDE */}
+            {step === 2 && (
+              <div className="animate-[fadeIn_0.5s_ease-out]">
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-6">Détails du sacrifice</h2>
+                
+                <div className="bg-emerald-50/50 border border-emerald-100 p-6 rounded-2xl mb-6 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-bold text-slate-900">Agneau de l'Aïd (Carcasse entière)</h3>
+                    <p className="text-emerald-600 font-semibold">{prixUnitaire}€ l'unité</p>
+                  </div>
+                  <div className="flex items-center gap-4 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
+                    <button onClick={() => setFormData(prev => ({...prev, quantite: Math.max(1, prev.quantite - 1)}))} className="text-slate-400 hover:text-emerald-600 font-bold text-xl px-2">-</button>
+                    <span className="font-bold text-lg w-4 text-center">{formData.quantite}</span>
+                    <button onClick={() => setFormData(prev => ({...prev, quantite: prev.quantite + 1}))} className="text-slate-400 hover:text-emerald-600 font-bold text-xl px-2">+</button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Nom(s) pour le sacrifice (Bismillah Allahu Akbar)</label>
+                  <textarea name="nom_sacrifice" value={formData.nom_sacrifice} onChange={handleChange} rows={3} placeholder="Ex: Pour la famille Dupont" className="w-full px-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all resize-none" required></textarea>
+                </div>
               </div>
-            </div>
+            )}
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Adresse de livraison *
-              </label>
-              <input
-                type="text"
-                name="adresse_livraison"
-                required
-                value={formData.adresse_livraison}
-                onChange={handleChange}
-                placeholder="Numéro et nom de rue"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-              />
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Code postal *
-                </label>
-                <input
-                  type="text"
-                  name="code_postal"
-                  required
-                  value={formData.code_postal}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                />
+            {/* ÉTAPE 3 : LIVRAISON */}
+            {step === 3 && (
+              <div className="animate-[fadeIn_0.5s_ease-out]">
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-6">Coordonnées de livraison</h2>
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Adresse complète</label>
+                    <input type="text" name="adresse_livraison" value={formData.adresse_livraison} onChange={handleChange} placeholder="123 rue de la Paix" className="w-full px-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all" required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Code Postal</label>
+                      <input type="text" name="code_postal" value={formData.code_postal} onChange={handleChange} className="w-full px-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Ville</label>
+                      <input type="text" name="ville" value={formData.ville} onChange={handleChange} className="w-full px-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all" required />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Notes pour le livreur (Optionnel)</label>
+                    <input type="text" name="notes" value={formData.notes} onChange={handleChange} placeholder="Code porte, bâtiment..." className="w-full px-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all" />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Ville *
-                </label>
-                <input
-                  type="text"
-                  name="ville"
-                  required
-                  value={formData.ville}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                />
-              </div>
-            </div>
+            )}
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Nom du sacrifice *
-              </label>
-              <input
-                type="text"
-                name="nom_sacrifice"
-                required
-                value={formData.nom_sacrifice}
-                onChange={handleChange}
-                placeholder="Nom de la personne pour qui le sacrifice est fait"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-              />
-            </div>
+            {/* ÉTAPE 4 : PAIEMENT (STRIPE) */}
+            {step === 4 && (
+              <div className="animate-[fadeIn_0.5s_ease-out]">
+                <div className="text-center mb-8">
+                  <h2 className="text-3xl font-black text-slate-900">Total à régler : {total}€</h2>
+                  <p className="text-slate-500 mt-2 font-medium">Pour {formData.quantite} agneau(x) livré(s) à domicile</p>
+                </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Date de livraison souhaitée *
-              </label>
-              <input
-                type="date"
-                name="date_livraison_souhaitee"
-                required
-                value={formData.date_livraison_souhaitee}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-              />
-            </div>
+                {/* Simulation Interface Stripe */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 relative overflow-hidden">
+                  <div className="flex items-center gap-2 mb-6 text-slate-800 font-bold">
+                    <CreditCard className="w-5 h-5 text-emerald-600" /> Carte Bancaire
+                    <ShieldCheck className="w-5 h-5 text-emerald-600 ml-auto" />
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-400">Numéro de carte (Simulation)</div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-400">MM/AA</div>
+                      <div className="bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-400">CVC</div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-6 text-xs text-center text-slate-500 flex items-center justify-center gap-1">
+                    <LockIcon className="w-3 h-3" /> Paiement sécurisé et crypté par Stripe
+                  </div>
+                </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Notes complémentaires
-              </label>
-              <textarea
-                name="notes"
-                rows={3}
-                value={formData.notes}
-                onChange={handleChange}
-                placeholder="Instructions spéciales, code d'accès, etc."
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all resize-none"
-              />
-            </div>
-
-            <div className="border-t pt-6 mt-8">
-              <div className="flex justify-between items-center mb-6">
-                <span className="text-lg font-semibold text-gray-900">Total à payer</span>
-                <span className="text-3xl font-bold text-emerald-600">350€</span>
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-emerald-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-emerald-700 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                    Traitement en cours...
-                  </>
-                ) : (
-                  'Confirmer ma commande'
+                {error && (
+                  <div className="mt-4 bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm border border-red-100 font-medium text-center">
+                    {error}
+                  </div>
                 )}
-              </button>
-              <p className="text-sm text-gray-500 text-center mt-4">
-                En confirmant, vous acceptez nos conditions de vente
-              </p>
+              </div>
+            )}
+
+            {/* ÉTAPE 5 : SUCCÈS & QR CODE */}
+            {step === 5 && orderData && (
+              <div className="text-center animate-[fadeIn_0.5s_ease-out] py-8">
+                <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl shadow-emerald-500/20">
+                  <CheckCircle2 className="w-12 h-12 text-emerald-600" />
+                </div>
+                <h2 className="text-4xl font-black text-slate-900 mb-4">Commande Validée !</h2>
+                <p className="text-lg text-slate-600 mb-8 max-w-md mx-auto">
+                  Al Hamdulillah, votre réservation a été enregistrée avec succès. Un e-mail de confirmation vous a été envoyé.
+                </p>
+
+                {/* CARTE QR CODE */}
+                <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 max-w-sm mx-auto shadow-2xl relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500"></div>
+                  <h3 className="text-emerald-400 font-bold uppercase tracking-widest text-sm mb-6">Votre Pass Livraison</h3>
+                  
+                  <div className="bg-white p-4 rounded-2xl inline-block mb-6 shadow-inner">
+                    {/* Génération du QR Code via une API gratuite pour éviter d'installer de nouveaux packages */}
+                    <img 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${orderData.numero_commande}`} 
+                      alt="QR Code Commande"
+                      className="w-40 h-40"
+                    />
+                  </div>
+                  
+                  <div className="text-white">
+                    <p className="text-slate-400 text-sm mb-1">Numéro de commande</p>
+                    <p className="text-2xl font-mono font-bold tracking-wider">{orderData.numero_commande}</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={onBack}
+                  className="mt-10 text-emerald-600 font-bold hover:text-emerald-700 transition-colors"
+                >
+                  ← Retourner à l'accueil
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* BOUTONS DE NAVIGATION */}
+          {step < 5 && (
+            <div className="mt-10 pt-6 border-t border-slate-200/60 flex justify-between items-center">
+              {step > 1 ? (
+                <button type="button" onClick={prevStep} className="px-6 py-3 text-slate-500 font-bold hover:text-slate-800 transition-colors flex items-center gap-2">
+                  <ChevronLeft className="w-5 h-5" /> Précédent
+                </button>
+              ) : <div></div>}
+
+              {step < 4 ? (
+                <button type="button" onClick={nextStep} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl flex items-center gap-2 transform hover:-translate-y-0.5">
+                  Continuer <ChevronRight className="w-5 h-5" />
+                </button>
+              ) : (
+                <button type="button" onClick={handleSubmit} disabled={loading} className="bg-emerald-600 text-white px-10 py-3.5 rounded-xl font-bold hover:bg-emerald-500 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] flex items-center gap-2 disabled:opacity-70 transform hover:-translate-y-0.5">
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+                  {loading ? 'Traitement...' : `Payer ${total}€`}
+                </button>
+              )}
             </div>
-          </form>
+          )}
+
         </div>
       </div>
     </div>
+  );
+}
+
+// Petite icône cadenas
+function LockIcon(props: any) {
+  return (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+    </svg>
   );
 }
