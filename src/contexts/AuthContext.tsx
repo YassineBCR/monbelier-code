@@ -122,14 +122,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     resetPassword,
     updatePassword,
     isRecoveringPassword,
-    isAdmin: profile?.role === 'admin',
-    isLivreur: profile?.role === 'livreur',
-    isClient: profile?.role === 'client',
+    // On ajoute .trim() et .toLowerCase() pour éviter les bugs liés aux espaces/majuscules
+    isAdmin: profile?.role?.trim().toLowerCase() === 'admin',
+    isLivreur: profile?.role?.trim().toLowerCase() === 'livreur',
+    isClient: profile?.role?.trim().toLowerCase() === 'client',
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');

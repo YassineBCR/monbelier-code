@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Package, Truck, CheckCircle, XCircle, Clock, Search } from 'lucide-react';
+import { LogOut, Package, Truck, CheckCircle, Clock, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { Database } from '../lib/database.types';
@@ -85,11 +85,13 @@ export function AdminDashboard() {
     }
   };
 
+  // CORRECTION ICI : Ajout de sécurités (|| '') pour éviter le crash si une donnée est nulle
   const filteredOrders = orders.filter(order => {
+    const searchLower = searchTerm.toLowerCase();
     const matchesSearch =
-      order.numero_commande.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.client_nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.client_prenom.toLowerCase().includes(searchTerm.toLowerCase());
+      (order.numero_commande || '').toLowerCase().includes(searchLower) ||
+      (order.client_nom || '').toLowerCase().includes(searchLower) ||
+      (order.client_prenom || '').toLowerCase().includes(searchLower);
 
     const matchesStatus = statusFilter === 'all' || order.statut === statusFilter;
 
@@ -125,7 +127,7 @@ export function AdminDashboard() {
             </div>
             <button
               onClick={() => signOut()}
-              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+              className="flex items-center text-gray-600 hover:text-red-600 transition-colors"
             >
               <LogOut className="h-5 w-5 mr-2" />
               Déconnexion
@@ -201,7 +203,7 @@ export function AdminDashboard() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date livraison</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Statut</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Livreur</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Prix</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -230,7 +232,7 @@ export function AdminDashboard() {
                       <select
                         value={order.statut}
                         onChange={(e) => updateOrderStatus(order.id, e.target.value as Order['statut'])}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(order.statut)}`}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(order.statut)} cursor-pointer`}
                       >
                         <option value="en_attente">En attente</option>
                         <option value="confirmee">Confirmée</option>
@@ -243,7 +245,7 @@ export function AdminDashboard() {
                       <select
                         value={order.livreur_id || ''}
                         onChange={(e) => assignLivreur(order.id, e.target.value)}
-                        className="px-3 py-1 border border-gray-300 rounded text-sm"
+                        className="px-3 py-1 border border-gray-300 rounded text-sm cursor-pointer"
                       >
                         <option value="">Non assigné</option>
                         {livreurs.map((livreur) => (
@@ -274,13 +276,13 @@ export function AdminDashboard() {
 
 function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
   return (
-    <div className="bg-white rounded-lg shadow-sm p-6">
+    <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-gray-600 mb-1">{label}</p>
           <p className="text-3xl font-bold text-gray-900">{value}</p>
         </div>
-        <div className={`${color} p-3 rounded-lg text-white`}>
+        <div className={`${color} p-3 rounded-lg text-white shadow-sm`}>
           {icon}
         </div>
       </div>

@@ -1,40 +1,88 @@
 // src/components/HomePage.tsx
-import { ShoppingBag, Truck, Shield, Clock, LayoutDashboard } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext'; // <-- Importez useAuth
+import { useState } from 'react';
+import { ShoppingBag, Truck, Shield, Clock, LayoutDashboard, ChevronRight, Lock, CheckCircle2, UserCircle, ChevronDown, LogOut } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 interface HomePageProps {
   onOrderClick: () => void;
-  onDashboardClick?: () => void; // <-- Ajoutez cette prop
+  onDashboardClick?: () => void;
+  onLoginClick: () => void;
 }
 
-export function HomePage({ onOrderClick, onDashboardClick }: HomePageProps) {
-  const { isAdmin, isLivreur } = useAuth(); // <-- Récupérez les permissions
+export function HomePage({ onOrderClick, onDashboardClick, onLoginClick }: HomePageProps) {
+  const { user, profile, isAdmin, isLivreur, signOut } = useAuth(); 
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-white">
       <nav className="bg-white shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
+            
+            {/* LOGO */}
             <div className="flex items-center space-x-3">
               <ShoppingBag className="h-8 w-8 text-emerald-600" />
               <h1 className="text-2xl font-bold text-gray-900">Monbelier</h1>
             </div>
             
-            <div className="flex items-center space-x-4">
-              {/* Le bouton Dashboard apparaît si l'utilisateur a les permissions */}
+            {/* MENU DROIT */}
+            <div className="flex items-center space-x-4 sm:space-x-6">
+              
+              {/* 🌟 LE BOUTON DASHBOARD EST DIRECTEMENT VISIBLE ICI POUR LES PROS 🌟 */}
               {(isAdmin || isLivreur) && onDashboardClick && (
                 <button
                   onClick={onDashboardClick}
+                  className="flex items-center text-gray-700 hover:text-emerald-600 font-bold transition-colors"
+                >
+                  <LayoutDashboard className="h-5 w-5 mr-1" />
+                  <span className="hidden sm:inline">Dashboard</span>
+                </button>
+              )}
+
+              {user ? (
+                // --- UTILISATEUR CONNECTÉ ---
+                <div className="relative">
+                  <button
+                    onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    className="flex items-center space-x-2 text-gray-700 hover:text-emerald-600 font-semibold transition-colors focus:outline-none"
+                  >
+                    <UserCircle className="h-6 w-6 text-emerald-600" />
+                    <span className="hidden sm:inline">
+                      Bonjour {profile?.nom || 'Client'}
+                    </span>
+                    <ChevronDown className={`h-4 w-4 transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Options du menu déroulant (Juste Déconnexion maintenant) */}
+                  {isMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg py-2 border border-emerald-100 ring-1 ring-black ring-opacity-5 z-50">
+                      <button
+                        onClick={async () => {
+                          setIsMenuOpen(false);
+                          await signOut();
+                        }}
+                        className="flex w-full items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <LogOut className="h-4 w-4 mr-2" />
+                        Se déconnecter
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // --- VISITEUR NON CONNECTÉ ---
+                <button
+                  onClick={onLoginClick}
                   className="flex items-center text-gray-600 hover:text-emerald-600 font-semibold transition-colors"
                 >
-                  <LayoutDashboard className="h-5 w-5 mr-2" />
-                  Dashboard
+                  <UserCircle className="h-5 w-5 mr-1" />
+                  <span className="hidden sm:inline">Se connecter</span>
                 </button>
               )}
               
               <button
                 onClick={onOrderClick}
-                className="bg-emerald-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-emerald-700 transition-all transform hover:scale-105 shadow-lg"
+                className="bg-emerald-600 text-white px-4 py-2 sm:px-6 sm:py-2.5 rounded-lg font-semibold hover:bg-emerald-700 transition-all transform hover:scale-105 shadow-lg"
               >
                 Commander
               </button>
@@ -42,7 +90,6 @@ export function HomePage({ onOrderClick, onDashboardClick }: HomePageProps) {
           </div>
         </div>
       </nav>
-      {/* ... (le reste du fichier reste inchangé) ... */}
 
       {/* 3. HERO SECTION */}
       <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 z-10">

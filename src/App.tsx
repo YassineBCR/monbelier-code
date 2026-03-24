@@ -10,7 +10,6 @@ function AppContent() {
   const { user, loading, isAdmin, isLivreur } = useAuth();
   const [currentView, setCurrentView] = useState<'home' | 'order' | 'login' | 'dashboard'>('home');
 
-  // Rediriger vers le dashboard automatiquement juste après une connexion réussie
   useEffect(() => {
     if (user && currentView === 'login') {
       setCurrentView('dashboard');
@@ -28,7 +27,6 @@ function AppContent() {
     );
   }
 
-  // Affichage des dashboards avec un bouton flottant pour revenir à l'accueil
   if (currentView === 'dashboard' && user) {
     if (isAdmin) {
       return (
@@ -59,7 +57,7 @@ function AppContent() {
   }
 
   if (!user && currentView === 'login') {
-    return <LoginPage />;
+    return <LoginPage onBack={() => setCurrentView('home')} />;
   }
 
   if (currentView === 'order') {
@@ -67,21 +65,11 @@ function AppContent() {
   }
 
   return (
-    <>
-      <HomePage 
-        onOrderClick={() => setCurrentView('order')} 
-        onDashboardClick={() => setCurrentView('dashboard')} 
-      />
-      {/* Cacher le bouton "Espace Pro" si l'utilisateur est déjà connecté */}
-      {!user && (
-        <button
-          onClick={() => setCurrentView('login')}
-          className="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-700 transition-all shadow-lg"
-        >
-          Espace Pro
-        </button>
-      )}
-    </>
+    <HomePage 
+      onOrderClick={() => setCurrentView('order')} 
+      onDashboardClick={() => setCurrentView('dashboard')} 
+      onLoginClick={() => setCurrentView('login')} 
+    />
   );
 }
 
