@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { loadStripe } from '@stripe/stripe-js';
 import { 
   ArrowLeft, ChevronRight, ChevronLeft, CreditCard, 
   CheckCircle2, MapPin, User, Package, ShieldCheck, Loader2 
 } from 'lucide-react';
+
+// Initialisation de Stripe (Assurez-vous d'avoir VITE_STRIPE_PUBLIC_KEY dans votre fichier .env)
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
 interface OrderFormProps {
   onBack: () => void;
@@ -45,8 +49,8 @@ export function OrderForm({ onBack }: OrderFormProps) {
     setError('');
 
     try {
-      // 1. Enregistrement en base de données
-      const { data, error: submitError } = await supabase
+      // 1. Enregistrement en base de données avec statut en attente de paiement
+      const { data: newOrderData, error: submitError } = await supabase
         .from('orders')
         .insert({
           client_prenom: formData.client_prenom,
@@ -61,20 +65,33 @@ export function OrderForm({ onBack }: OrderFormProps) {
           notes: formData.notes,
           prix: total,
           statut: 'en_attente',
-          payment_status: 'paid' // Simulé comme payé pour l'exemple
+          payment_status: 'pending' // En attente du paiement réel Stripe
         })
         .select()
         .single();
 
       if (submitError) throw submitError;
 
-      // 2. Passage à l'étape succès
-      setOrderData(data);
-      setStep(5);
+      // 2. Appel de la fonction Edge Supabase pour créer la session Stripe
+      const { data, error: funcError } = await supabase.functions.invoke('create-payment-intent', {
+        body: { 
+          reservationId: newOrderData.id, 
+          quantite: formData.quantite,
+          email: formData.client_email 
+        }
+      });
+
+      if (funcError || !data?.sessionId) {
+        throw new Error(funcError?.message || "Erreur lors de la connexion à Stripe");
+      }
+
+      // 3. Redirection vers la vraie page de paiement Stripe
+      const stripe = await stripePromise;
+      await stripe?.redirectToCheckout({ sessionId: data.sessionId });
+
     } catch (err: any) {
       setError(err.message || 'Erreur lors de la validation de la commande');
-    } finally {
-      setLoading(false);
+      setLoading(false); // On arrête le chargement seulement en cas d'erreur
     }
   };
 
@@ -209,24 +226,12 @@ export function OrderForm({ onBack }: OrderFormProps) {
                   <p className="text-slate-500 mt-2 font-medium">Pour {formData.quantite} agneau(x) livré(s) à domicile</p>
                 </div>
 
-                {/* Simulation Interface Stripe */}
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 relative overflow-hidden">
-                  <div className="flex items-center gap-2 mb-6 text-slate-800 font-bold">
-                    <CreditCard className="w-5 h-5 text-emerald-600" /> Carte Bancaire
-                    <ShieldCheck className="w-5 h-5 text-emerald-600 ml-auto" />
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div className="bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-400">Numéro de carte (Simulation)</div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-400">MM/AA</div>
-                      <div className="bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-400">CVC</div>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-6 text-xs text-center text-slate-500 flex items-center justify-center gap-1">
-                    <LockIcon className="w-3 h-3" /> Paiement sécurisé et crypté par Stripe
-                  </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center">
+                  <ShieldCheck className="w-12 h-12 text-emerald-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">Paiement 100% Sécurisé</h3>
+                  <p className="text-slate-600 text-sm">
+                    En cliquant sur "Payer", vous serez redirigé vers la plateforme sécurisée de Stripe pour finaliser votre transaction.
+                  </p>
                 </div>
 
                 {error && (
@@ -237,7 +242,7 @@ export function OrderForm({ onBack }: OrderFormProps) {
               </div>
             )}
 
-            {/* ÉTAPE 5 : SUCCÈS & QR CODE */}
+            {/* ÉTAPE 5 : SUCCÈS & QR CODE (Aura lieu après le retour de Stripe si géré par query param) */}
             {step === 5 && orderData && (
               <div className="text-center animate-[fadeIn_0.5s_ease-out] py-8">
                 <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl shadow-emerald-500/20">
@@ -254,9 +259,8 @@ export function OrderForm({ onBack }: OrderFormProps) {
                   <h3 className="text-emerald-400 font-bold uppercase tracking-widest text-sm mb-6">Votre Pass Livraison</h3>
                   
                   <div className="bg-white p-4 rounded-2xl inline-block mb-6 shadow-inner">
-                    {/* Génération du QR Code via une API gratuite pour éviter d'installer de nouveaux packages */}
                     <img 
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${orderData.numero_commande}`} 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${orderData.numero_commande || orderData.id}`} 
                       alt="QR Code Commande"
                       className="w-40 h-40"
                     />
@@ -264,7 +268,7 @@ export function OrderForm({ onBack }: OrderFormProps) {
                   
                   <div className="text-white">
                     <p className="text-slate-400 text-sm mb-1">Numéro de commande</p>
-                    <p className="text-2xl font-mono font-bold tracking-wider">{orderData.numero_commande}</p>
+                    <p className="text-2xl font-mono font-bold tracking-wider">{orderData.numero_commande || "Bientôt disponible"}</p>
                   </div>
                 </div>
 
@@ -294,7 +298,7 @@ export function OrderForm({ onBack }: OrderFormProps) {
               ) : (
                 <button type="button" onClick={handleSubmit} disabled={loading} className="bg-emerald-600 text-white px-10 py-3.5 rounded-xl font-bold hover:bg-emerald-500 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] flex items-center gap-2 disabled:opacity-70 transform hover:-translate-y-0.5">
                   {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
-                  {loading ? 'Traitement...' : `Payer ${total}€`}
+                  {loading ? 'Redirection vers Stripe...' : `Payer ${total}€`}
                 </button>
               )}
             </div>
@@ -303,15 +307,5 @@ export function OrderForm({ onBack }: OrderFormProps) {
         </div>
       </div>
     </div>
-  );
-}
-
-// Petite icône cadenas
-function LockIcon(props: any) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-    </svg>
   );
 }
