@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { 
   Store, ShoppingBag, BarChart3, Users, 
   Plus, CheckCircle2, MapPin, Phone, Mail, ChevronRight, Package, Edit2, X,
-  Truck, Factory, Box, CheckCheck
+  Truck, Factory, Box, CheckCheck, Clock 
 } from 'lucide-react';
 
 export function AdminDashboard() {
@@ -193,7 +193,7 @@ export function AdminDashboard() {
                                 </td>
                                 <td className="p-4">
                                   
-                                  {/* WORKFLOW LOGISTIQUE - Les boutons changent selon l'état actuel */}
+                                  {/* WORKFLOW LOGISTIQUE */}
                                   {statut === 'en_attente' && (
                                     <button onClick={() => updateStatus(res.id, 'en_livraison')} className="text-sm bg-slate-900 text-white hover:bg-slate-800 px-4 py-2 rounded-xl font-bold transition-all flex items-center gap-2 shadow-sm">
                                       <Truck className="w-4 h-4"/> Expédier (Camion)
