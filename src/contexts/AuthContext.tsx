@@ -18,8 +18,8 @@ interface AuthContextType {
   signUp: (email: string, password: string, nom: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
-  updatePassword: (password: string) => Promise<void>; // <-- NOUVELLE FONCTION
-  isRecoveringPassword: boolean; // <-- NOUVEL ÉTAT
+  updatePassword: (password: string) => Promise<void>;
+  isRecoveringPassword: boolean;
   isAdmin: boolean;
   isLivreur: boolean;
   isClient: boolean;
@@ -31,7 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isRecoveringPassword, setIsRecoveringPassword] = useState(false); // État pour la récupération
+  const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -41,7 +41,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // DÉTECTION DU CLIC SUR LE LIEN "MOT DE PASSE OUBLIÉ"
       if (event === 'PASSWORD_RECOVERY') {
         setIsRecoveringPassword(true);
       }
@@ -69,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
       setProfile(data);
     } catch (error) {
-      console.error('Error loading profile:', error);
+      console.error('Erreur chargement profil:', error);
     } finally {
       setLoading(false);
     }
@@ -81,16 +80,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, nom: string) => {
-    const { data, error } = await supabase.auth.signUp({
-      email, password, options: { data: { nom, role: 'client' } }
+    // Plus besoin de .insert() ici ! Le trigger SQL fait le travail automatiquement.
+    const { error } = await supabase.auth.signUp({
+      email, password, options: { data: { nom } }
     });
     if (error) throw error;
-    
-    if (data.user) {
-      await supabase.from('profiles').insert([
-        { id: data.user.id, email, nom, role: 'client' }
-      ]);
-    }
   };
 
   const signOut = async () => {
@@ -105,11 +99,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
-  // --- NOUVELLE FONCTION POUR SAUVEGARDER LE NOUVEAU MOT DE PASSE ---
   const updatePassword = async (password: string) => {
     const { error } = await supabase.auth.updateUser({ password });
     if (error) throw error;
-    setIsRecoveringPassword(false); // On sort du mode récupération
+    setIsRecoveringPassword(false);
   };
 
   const value = {
@@ -122,7 +115,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     resetPassword,
     updatePassword,
     isRecoveringPassword,
-    // On ajoute .trim() et .toLowerCase() pour éviter les bugs liés aux espaces/majuscules
     isAdmin: profile?.role?.trim().toLowerCase() === 'admin',
     isLivreur: profile?.role?.trim().toLowerCase() === 'livreur',
     isClient: profile?.role?.trim().toLowerCase() === 'client',
@@ -130,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
+
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
