@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Mail, Lock, User, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom'; // - Import du hook de navigation
 
 interface LoginPageProps {
   onBack?: () => void;
@@ -8,6 +9,7 @@ interface LoginPageProps {
 
 export function LoginPage({ onBack }: LoginPageProps) {
   const { signIn, signUp, resetPassword, isRecoveringPassword, updatePassword } = useAuth();
+  const navigate = useNavigate(); // - Initialisation de navigate
   
   const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
   const [email, setEmail] = useState('');
@@ -28,15 +30,18 @@ export function LoginPage({ onBack }: LoginPageProps) {
       if (isRecoveringPassword) {
         await updatePassword(password);
         setMessage("Votre mot de passe a été mis à jour avec succès.");
-        setTimeout(() => window.location.reload(), 2000); // Recharge la page
+        setTimeout(() => navigate('/'), 2000); // Utilisation de navigate au lieu de reload
       } else if (mode === 'login') {
-        await signIn(email, password);
+        await signIn(email, password); //
+        setMessage("Connexion réussie ! Redirection..."); //
+        // Redirection vers la page d'accueil après un court délai pour voir le message
+        setTimeout(() => navigate('/'), 1000); //
       } else if (mode === 'signup') {
-        await signUp(email, password, nom);
+        await signUp(email, password, nom); //
         setMessage("Compte créé avec succès ! Vérifiez vos emails si nécessaire.");
-        setMode('login'); // Redirige sur login
+        setMode('login');
       } else if (mode === 'reset') {
-        await resetPassword(email);
+        await resetPassword(email); //
         setMessage("Un email de réinitialisation vous a été envoyé.");
       }
     } catch (err: any) {

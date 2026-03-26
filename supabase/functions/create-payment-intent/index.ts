@@ -1,75 +1,51 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import Stripe from "https://esm.sh/stripe@13.10.0?target=deno"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-};
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+}
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
-  }
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { amount, orderData } = await req.json();
+    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
+      apiVersion: '2023-10-16',
+    })
 
-    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+    const { reservationId, quantite, email } = await req.json()
 
-    if (!stripeKey) {
-      return new Response(
-        JSON.stringify({
-          error: 'Stripe is not configured. Please contact support.',
-          demo: true
-        }),
+    // Création de la session Stripe Checkout
+    const session = await stripe.checkout.sessions.create({
+      customer_email: email,
+      line_items: [
         {
-          status: 200,
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'application/json',
+          price_data: {
+            currency: 'eur',
+            product_data: {
+              name: `Agneau Aïd - Réservation (x${quantite})`,
+              description: 'Sacrifice et livraison incluse à Montpellier',
+            },
+            unit_amount: 36000, -- 360.00€
           },
-        }
-      );
-    }
-
-    const response = await fetch('https://api.stripe.com/v1/payment_intents', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${stripeKey}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        amount: (amount * 100).toString(),
-        currency: 'eur',
-        'metadata[order_id]': orderData.id,
-        'metadata[client_email]': orderData.client_email,
-      }),
-    });
-
-    const paymentIntent = await response.json();
-
-    return new Response(
-      JSON.stringify(paymentIntent),
-      {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
+          quantity: quantite,
         },
-      }
-    );
+      ],
+      mode: 'payment',
+      success_url: `${req.headers.get('origin')}/?success=true`,
+      cancel_url: `${req.headers.get('origin')}/reservation`,
+      metadata: { reservationId },
+    })
+
+    return new Response(JSON.stringify({ sessionId: session.id }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    })
   } catch (error) {
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400,
+    })
   }
-});
+})

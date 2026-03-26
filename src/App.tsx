@@ -1,18 +1,17 @@
-// src/App.tsx
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { HomePage } from './components/HomePage';
 import { LoginPage } from './components/LoginPage';
-// ... autres imports
+import { ReservationForm } from './components/ReservationForm';
 
 export default function App() {
   return (
-    <Router> {/* Le Router doit être à l'extérieur de l'AuthProvider */}
+    <Router>
       <AuthProvider>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
-          {/* ... vos autres routes */}
+          <Route path="/reservation" element={<ReservationForm />} />
         </Routes>
       </AuthProvider>
     </Router>
