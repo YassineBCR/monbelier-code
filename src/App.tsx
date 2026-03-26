@@ -5,21 +5,61 @@ import { LoginPage } from './components/LoginPage';
 import { ReservationForm } from './components/ReservationForm';
 import { SuccessPage } from './components/SuccessPage';
 import { CancelPage } from './components/CancelPage';
-// 1. IMPORT DU DASHBOARD ADMIN
-import { AdminDashboard } from './components/AdminDashboard'; 
+import { AdminDashboard } from './components/AdminDashboard';
+import { AbattoirDashboard } from './components/AbattoirDashboard';
+import { LivreurDashboard } from './components/LivreurDashboard';
+import { MosqueeAdminDashboard } from './components/MosqueeAdminDashboard';
+import { PickupPage } from './components/PickupPage';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 export default function App() {
   return (
     <Router>
       <AuthProvider>
         <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/reservation" element={<ReservationForm />} />
-          <Route path="/success" element={<SuccessPage />} /> 
-          <Route path="/cancel" element={<CancelPage />} />
-          {/* 2. AJOUT DE LA ROUTE POUR LE DASHBOARD */}
-          <Route path="/admin/global" element={<AdminDashboard />} /> 
+          {/* ── Pages publiques ── */}
+          <Route path="/"            element={<HomePage />} />
+          <Route path="/login"       element={<LoginPage />} />
+          <Route path="/success"     element={<SuccessPage />} />
+          <Route path="/cancel"      element={<CancelPage />} />
+
+          {/* ── QR Code retrait — accessible sans connexion ── */}
+          <Route path="/retrait/:token" element={<PickupPage />} />
+
+          {/* ── Réservation (client connecté) ── */}
+          <Route path="/reservation" element={
+            <ProtectedRoute roles={['client', 'admin']}>
+              <ReservationForm />
+            </ProtectedRoute>
+          } />
+
+          {/* ── Admin global ── */}
+          <Route path="/admin/global" element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          } />
+
+          {/* ── Abattoir ── */}
+          <Route path="/abattoir" element={
+            <ProtectedRoute roles={['abattoir', 'admin']}>
+              <AbattoirDashboard />
+            </ProtectedRoute>
+          } />
+
+          {/* ── Livreur ── */}
+          <Route path="/livreur" element={
+            <ProtectedRoute roles={['livreur', 'admin']}>
+              <LivreurDashboard />
+            </ProtectedRoute>
+          } />
+
+          {/* ── Admin mosquée ── */}
+          <Route path="/mosquee" element={
+            <ProtectedRoute roles={['mosquee_admin', 'admin']}>
+              <MosqueeAdminDashboard />
+            </ProtectedRoute>
+          } />
         </Routes>
       </AuthProvider>
     </Router>

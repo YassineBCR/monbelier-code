@@ -2,12 +2,13 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
-interface Profile {
+export interface Profile {
   id: string;
   email: string;
-  role: 'admin' | 'livreur' | 'client';
+  role: 'admin' | 'livreur' | 'client' | 'abattoir' | 'mosquee_admin';
   nom: string | null;
   telephone: string | null;
+  mosquee_id: string | null; // Pour les mosquee_admin
 }
 
 interface AuthContextType {
@@ -23,6 +24,10 @@ interface AuthContextType {
   isAdmin: boolean;
   isLivreur: boolean;
   isClient: boolean;
+  isAbattoir: boolean;
+  isMosqueeAdmin: boolean;
+  // Redirection automatique selon le rôle
+  getDashboardPath: () => string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -41,12 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setIsRecoveringPassword(true);
-      }
-
+      if (event === 'PASSWORD_RECOVERY') setIsRecoveringPassword(true);
       setUser(session?.user ?? null);
-
       if (session?.user) {
         loadProfile(session.user.id);
       } else {
@@ -65,7 +66,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .select('*')
         .eq('id', userId)
         .maybeSingle();
-
       if (error) throw error;
       setProfile(data);
     } catch (error) {
@@ -78,12 +78,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      if (error.message.includes('Invalid login credentials')) {
+      if (error.message.includes('Invalid login credentials'))
         throw new Error('Email ou mot de passe incorrect.');
-      }
-      if (error.message.includes('Email not confirmed')) {
+      if (error.message.includes('Email not confirmed'))
         throw new Error('Veuillez confirmer votre email avant de vous connecter.');
-      }
       throw new Error(error.message);
     }
   };
@@ -92,18 +90,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { nom } }
+      options: { data: { nom } },
     });
-
     if (error) {
-      if (error.message.includes('User already registered')) {
+      if (error.message.includes('User already registered'))
         throw new Error('Un compte existe déjà avec cet email.');
-      }
       throw new Error(error.message);
     }
-
-    // Le trigger SQL "on_auth_user_created" crée le profil automatiquement
-    // Aucune insertion manuelle nécessaire ici
   };
 
   const signOut = async () => {
@@ -124,7 +117,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsRecoveringPassword(false);
   };
 
-  const value = {
+  const getDashboardPath = (): string => {
+    if (!profile) return '/';
+    const paths: Record<string, string> = {
+      admin: '/admin/global',
+      abattoir: '/abattoir',
+      livreur: '/livreur',
+      mosquee_admin: '/mosquee',
+      client: '/',
+    };
+    return paths[profile.role] || '/';
+  };
+
+  const role = profile?.role?.trim().toLowerCase();
+
+  const value: AuthContextType = {
     user,
     profile,
     loading,
@@ -134,9 +141,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     resetPassword,
     updatePassword,
     isRecoveringPassword,
-    isAdmin: profile?.role?.trim().toLowerCase() === 'admin',
-    isLivreur: profile?.role?.trim().toLowerCase() === 'livreur',
-    isClient: profile?.role?.trim().toLowerCase() === 'client',
+    isAdmin: role === 'admin',
+    isLivreur: role === 'livreur',
+    isClient: role === 'client',
+    isAbattoir: role === 'abattoir',
+    isMosqueeAdmin: role === 'mosquee_admin',
+    getDashboardPath,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -144,6 +154,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 }
