@@ -46,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(session?.user ?? null);
+
       if (session?.user) {
         loadProfile(session.user.id);
       } else {
@@ -76,15 +77,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    if (error) {
+      if (error.message.includes('Invalid login credentials')) {
+        throw new Error('Email ou mot de passe incorrect.');
+      }
+      if (error.message.includes('Email not confirmed')) {
+        throw new Error('Veuillez confirmer votre email avant de vous connecter.');
+      }
+      throw new Error(error.message);
+    }
   };
 
   const signUp = async (email: string, password: string, nom: string) => {
-    // Plus besoin de .insert() ici ! Le trigger SQL fait le travail automatiquement.
     const { error } = await supabase.auth.signUp({
-      email, password, options: { data: { nom } }
+      email,
+      password,
+      options: { data: { nom } }
     });
-    if (error) throw error;
+
+    if (error) {
+      if (error.message.includes('User already registered')) {
+        throw new Error('Un compte existe déjà avec cet email.');
+      }
+      throw new Error(error.message);
+    }
+
+    // Le trigger SQL "on_auth_user_created" crée le profil automatiquement
+    // Aucune insertion manuelle nécessaire ici
   };
 
   const signOut = async () => {

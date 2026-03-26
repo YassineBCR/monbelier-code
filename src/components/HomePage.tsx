@@ -1,39 +1,114 @@
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
- LogIn, LayoutDashboard, ChevronRight, 
-  Shield, Truck, CheckCircle2, Clock, Lock, ShoppingBag 
+  LogIn, ChevronRight, 
+  Shield, Truck, CheckCircle2, Clock, Lock, ShoppingBag, Leaf,
+  LogOut, ChevronDown, LayoutDashboard
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export function HomePage() {
-  const { user } = useAuth();
+  const { user, profile, signOut, isAdmin, isLivreur } = useAuth();
   const navigate = useNavigate();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Ferme le dropdown si on clique en dehors
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSignOut = async () => {
+    await signOut();
+    setDropdownOpen(false);
+    navigate('/');
+  };
+
+  const displayName = profile?.nom || user?.email || '';
 
   return (
     <div className="min-h-screen bg-white">
-      {/* 1. NAVIGATION BAR */}
+
+      {/* NAVIGATION BAR */}
       <nav className="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-emerald-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-20 items-center">
+
+            {/* Logo */}
             <div className="flex items-center space-x-2">
               <div className="bg-emerald-600 p-2 rounded-xl">
-                <Sheep className="h-6 w-6 text-white" />
+                <Leaf className="h-6 w-6 text-white" />
               </div>
               <span className="text-2xl font-bold bg-gradient-to-r from-emerald-700 to-emerald-500 bg-clip-text text-transparent">
                 Mon Bélier
               </span>
             </div>
-            
+
+            {/* Actions */}
             <div className="flex items-center space-x-4">
+
               {user ? (
-                <button
-                  onClick={() => navigate('/admin/global')}
-                  className="flex items-center space-x-2 bg-emerald-50 text-emerald-700 px-6 py-2.5 rounded-full font-medium hover:bg-emerald-100 transition-all border border-emerald-200"
-                >
-                  <LayoutDashboard className="h-4 w-4" />
-                  <span>Tableau de bord</span>
-                </button>
+                /* Dropdown utilisateur connecté */
+                <div className="relative" ref={dropdownRef}>
+                  <button
+                    onClick={() => setDropdownOpen(!dropdownOpen)}
+                    className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2.5 rounded-full font-medium hover:bg-emerald-100 transition-all border border-emerald-200"
+                  >
+                    <div className="w-7 h-7 bg-emerald-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                      {displayName.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="max-w-[160px] truncate text-sm">
+                      Bonjour, {displayName}
+                    </span>
+                    <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Menu dropdown */}
+                  {dropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-[fadeIn_0.15s_ease-out]">
+                      {/* Infos compte */}
+                      <div className="px-4 py-3 border-b border-gray-100">
+                        <p className="text-xs text-gray-400 font-medium">Connecté en tant que</p>
+                        <p className="text-sm text-gray-800 font-semibold truncate">{user.email}</p>
+                        <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-semibold ${
+                          isAdmin ? 'bg-purple-100 text-purple-700' :
+                          isLivreur ? 'bg-orange-100 text-orange-700' :
+                          'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {isAdmin ? 'Administrateur' : isLivreur ? 'Livreur' : 'Client'}
+                        </span>
+                      </div>
+
+                      {/* Tableau de bord si admin ou livreur */}
+                      {(isAdmin || isLivreur) && (
+                        <button
+                          onClick={() => { navigate('/admin/global'); setDropdownOpen(false); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          <LayoutDashboard className="h-4 w-4 text-gray-400" />
+                          Tableau de bord
+                        </button>
+                      )}
+
+                      {/* Déconnexion */}
+                      <button
+                        onClick={handleSignOut}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Se déconnecter
+                      </button>
+                    </div>
+                  )}
+                </div>
               ) : (
+                /* Bouton connexion si non connecté */
                 <button
                   onClick={() => navigate('/login')}
                   className="flex items-center space-x-2 text-gray-600 hover:text-emerald-600 px-4 py-2 rounded-full font-medium transition-colors"
@@ -42,7 +117,7 @@ export function HomePage() {
                   <span>Se connecter</span>
                 </button>
               )}
-              
+
               <button
                 onClick={() => navigate('/reservation')}
                 className="bg-emerald-600 text-white px-8 py-2.5 rounded-full font-medium hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 active:scale-95"
@@ -54,7 +129,7 @@ export function HomePage() {
         </div>
       </nav>
 
-      {/* 2. HERO SECTION */}
+      {/* HERO SECTION */}
       <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/60 backdrop-blur-md border border-emerald-200 text-emerald-800 font-bold text-sm mb-8 shadow-sm">
@@ -109,7 +184,7 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* 3. FEATURES SECTION */}
+      {/* FEATURES SECTION */}
       <section id="details" className="py-24 relative z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
@@ -125,7 +200,7 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* 4. STEPS SECTION */}
+      {/* STEPS SECTION */}
       <section className="py-24 relative z-10 bg-slate-900 text-white overflow-hidden mt-12 rounded-t-[3rem]">
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
         <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/20 rounded-full blur-[100px]"></div>
@@ -143,7 +218,7 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* 5. CTA FINAL SECTION */}
+      {/* CTA SECTION */}
       <section className="py-24 relative z-10 bg-gradient-to-br from-emerald-600 to-teal-800 text-white">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h3 className="text-4xl font-black mb-6">Prêt à commander ?</h3>
@@ -157,7 +232,6 @@ export function HomePage() {
             >
               Je commande mon agneau
             </button>
-            
             {!user && (
               <p className="mt-4 text-emerald-100/80 text-sm font-medium flex items-center justify-center gap-2">
                 <Lock className="w-4 h-4" /> Un compte est nécessaire pour sécuriser votre réservation
@@ -167,7 +241,7 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* 6. FOOTER */}
+      {/* FOOTER */}
       <footer className="bg-slate-950 text-slate-400 py-12 relative z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
@@ -181,11 +255,11 @@ export function HomePage() {
           </div>
         </div>
       </footer>
+
     </div>
   );
 }
 
-// Composants internes pour la structure
 function FeatureCard({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
   return (
     <div className="bg-white/60 backdrop-blur-xl border border-white/60 p-8 rounded-3xl shadow-xl shadow-slate-200/50 hover:-translate-y-2 transition-all duration-300 group">
