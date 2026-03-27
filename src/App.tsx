@@ -8,7 +8,7 @@ import { CancelPage } from './components/CancelPage';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AbattoirDashboard } from './components/AbattoirDashboard';
 import { LivreurDashboard } from './components/LivreurDashboard';
-import { MosqueeAdminDashboard } from './components/MosqueeAdminDashboard';
+import { MosqueeAdminDashboard } from './components/Mosqueeadmindashboard';
 import { PickupPage } from './components/PickupPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
