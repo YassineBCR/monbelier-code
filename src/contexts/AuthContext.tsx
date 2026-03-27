@@ -1,14 +1,14 @@
+// src/contexts/AuthContext.tsx
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
-export interface Profile {
+interface Profile {
   id: string;
   email: string;
-  role: 'admin' | 'livreur' | 'client' | 'abattoir' | 'mosquee_admin';
+  role: 'admin' | 'livreur' | 'client';
   nom: string | null;
   telephone: string | null;
-  mosquee_id: string | null; // Pour les mosquee_admin
 }
 
 interface AuthContextType {
@@ -16,7 +16,7 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, nom: string) => Promise<void>;
+  signUp: (email: string, password: string, nom: string) => Promise<{ needsConfirmation: boolean }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
@@ -24,10 +24,6 @@ interface AuthContextType {
   isAdmin: boolean;
   isLivreur: boolean;
   isClient: boolean;
-  isAbattoir: boolean;
-  isMosqueeAdmin: boolean;
-  // Redirection automatique selon le rôle
-  getDashboardPath: () => string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -39,14 +35,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
 
   useEffect(() => {
+    // Récupère la session au chargement
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       if (session?.user) loadProfile(session.user.id);
       else setLoading(false);
     });
 
+    // Écoute les changements d'état auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY') setIsRecoveringPassword(true);
+      if (event === 'PASSWORD_RECOVERY') {
+        // L'utilisateur a cliqué sur le lien de reset dans l'email
+        setIsRecoveringPassword(true);
+      }
+
+      if (event === 'SIGNED_IN' && isRecoveringPassword) {
+        // Ne redirige pas automatiquement si on est en recovery
+        return;
+      }
+
       setUser(session?.user ?? null);
       if (session?.user) {
         loadProfile(session.user.id);
@@ -66,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .select('*')
         .eq('id', userId)
         .maybeSingle();
+
       if (error) throw error;
       setProfile(data);
     } catch (error) {
@@ -77,26 +85,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      if (error.message.includes('Invalid login credentials'))
-        throw new Error('Email ou mot de passe incorrect.');
-      if (error.message.includes('Email not confirmed'))
-        throw new Error('Veuillez confirmer votre email avant de vous connecter.');
-      throw new Error(error.message);
-    }
+    if (error) throw error;
   };
 
-  const signUp = async (email: string, password: string, nom: string) => {
-    const { error } = await supabase.auth.signUp({
+  const signUp = async (
+    email: string,
+    password: string,
+    nom: string
+  ): Promise<{ needsConfirmation: boolean }> => {
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { nom } },
+      options: {
+        data: { nom },
+        // L'URL vers laquelle Supabase redirige après confirmation d'email
+        emailRedirectTo: window.location.origin,
+      },
     });
-    if (error) {
-      if (error.message.includes('User already registered'))
-        throw new Error('Un compte existe déjà avec cet email.');
-      throw new Error(error.message);
-    }
+    if (error) throw error;
+
+    // Si identities est vide → l'email est déjà enregistré mais non confirmé
+    // Si session est null → la confirmation par email est activée
+    const needsConfirmation = !data.session;
+    return { needsConfirmation };
   };
 
   const signOut = async () => {
@@ -106,6 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resetPassword = async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      // Supabase redirige vers cette URL après le clic dans l'email
+      // L'event PASSWORD_RECOVERY sera déclenché dans onAuthStateChange
       redirectTo: window.location.origin,
     });
     if (error) throw error;
@@ -117,20 +130,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsRecoveringPassword(false);
   };
 
-  const getDashboardPath = (): string => {
-    if (!profile) return '/';
-    const paths: Record<string, string> = {
-      admin: '/admin/global',
-      abattoir: '/abattoir',
-      livreur: '/livreur',
-      mosquee_admin: '/mosquee',
-      client: '/',
-    };
-    return paths[profile.role] || '/';
-  };
-
-  const role = profile?.role?.trim().toLowerCase();
-
   const value: AuthContextType = {
     user,
     profile,
@@ -141,12 +140,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     resetPassword,
     updatePassword,
     isRecoveringPassword,
-    isAdmin: role === 'admin',
-    isLivreur: role === 'livreur',
-    isClient: role === 'client',
-    isAbattoir: role === 'abattoir',
-    isMosqueeAdmin: role === 'mosquee_admin',
-    getDashboardPath,
+    isAdmin: profile?.role?.trim().toLowerCase() === 'admin',
+    isLivreur: profile?.role?.trim().toLowerCase() === 'livreur',
+    isClient: profile?.role?.trim().toLowerCase() === 'client',
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -154,6 +150,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within an AuthProvider');
+  if (context === undefined) {
+    throw new Error('useAuth doit être utilisé dans un AuthProvider');
+  }
   return context;
 }
