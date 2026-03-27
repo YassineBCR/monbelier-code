@@ -1,54 +1,80 @@
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, ArrowLeft, Download } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import { CheckCircle2, Loader2, Home } from 'lucide-react';
 
 export function SuccessPage() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const sessionId = searchParams.get('session_id');
   
-  // On récupère l'ID de la réservation passé dans l'URL par Stripe
-  const reservationId = searchParams.get('id') || 'COMMANDE_VALIDEE';
+  const [loading, setLoading] = useState(true);
+  const [reservation, setReservation] = useState<any>(null);
+  const [error, setError] = useState('');
+  const hasVerified = useRef(false);
+
+  useEffect(() => {
+    if (!sessionId) {
+      navigate('/');
+      return;
+    }
+
+    async function verifyPayment() {
+      if (hasVerified.current) return;
+      hasVerified.current = true;
+      
+      try {
+        // C'est ici qu'on vérifie Stripe et qu'on crée la commande en base
+        const { data, error: funcError } = await supabase.functions.invoke('verify-payment', {
+          body: { session_id: sessionId },
+          headers: { 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY }
+        });
+
+        if (funcError) throw new Error(funcError.message);
+        if (data?.error) throw new Error(data.error);
+        
+        setReservation(data.reservation);
+      } catch (err: any) {
+        setError("Erreur lors de la validation : " + err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    verifyPayment();
+  }, [sessionId, navigate]);
+
+  if (loading) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#FAF7F2] gap-4">
+      <Loader2 className="w-12 h-12 animate-spin text-green-800" />
+      <p className="text-xl font-bold text-green-950">Validation de votre paiement en cours...</p>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-[2rem] shadow-xl p-8 text-center border border-slate-100 animate-[fadeIn_0.5s_ease-out]">
-        
-        <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
-          <CheckCircle2 className="w-10 h-10 text-emerald-600" />
-        </div>
-        
-        <h1 className="text-3xl font-black text-slate-900 mb-2">Paiement Réussi !</h1>
-        <p className="text-slate-600 mb-8 font-medium">
-          Al Hamdulillah, votre réservation a bien été confirmée. Un e-mail récapitulatif vous a été envoyé.
-        </p>
-
-        {/* CARTE QR CODE */}
-        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-6 mb-8 shadow-lg relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
-          <h3 className="text-emerald-400 font-bold uppercase tracking-widest text-xs mb-4">Pass de Retrait</h3>
-          
-          <div className="bg-white p-3 rounded-xl inline-block mb-4 shadow-inner">
-            <img 
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${reservationId}`} 
-              alt="QR Code de retrait"
-              className="w-32 h-32"
-            />
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#FAF7F2] p-4">
+      <div className="bg-white p-8 md:p-12 rounded-[2rem] shadow-xl max-w-lg w-full text-center">
+        {error ? (
+          <div>
+            <div className="w-20 h-20 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl font-bold">!</div>
+            <h1 className="text-2xl font-black text-slate-800 mb-4">{error}</h1>
+            <p className="text-slate-600 mb-8">Veuillez nous contacter si votre compte a été débité.</p>
           </div>
-          
-          <p className="text-slate-400 text-xs mb-1">Numéro de réservation</p>
-          <p className="text-white font-mono text-sm break-all bg-white/10 py-2 px-3 rounded-lg">
-            {reservationId}
-          </p>
-        </div>
-
-        <p className="text-sm text-slate-500 mb-8">
-          Veuillez présenter ce QR Code (ou une capture d'écran) lors de la récupération de votre commande.
-        </p>
-
-        <button 
-          onClick={() => navigate('/')} 
-          className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold hover:bg-emerald-500 transition-all flex justify-center items-center gap-2"
-        >
-          <ArrowLeft className="w-5 h-5" /> Retour à l'accueil
+        ) : (
+          <div>
+            <CheckCircle2 className="w-24 h-24 text-green-500 mx-auto mb-6" />
+            <h1 className="text-3xl font-black text-green-950 mb-2 uppercase tracking-tight">Paiement Réussi !</h1>
+            <p className="text-slate-600 mb-8 text-lg">Votre réservation pour l'Aïd a bien été enregistrée.</p>
+            
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8">
+              <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Numéro de réservation</p>
+              <p className="text-2xl font-black text-amber-600">{reservation?.id?.split('-')[0] || 'MB-2026-OK'}</p>
+            </div>
+          </div>
+        )}
+        
+        <button onClick={() => navigate('/')} className="w-full bg-slate-100 text-slate-700 px-6 py-4 rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-slate-200 transition-colors flex items-center justify-center gap-2">
+          <Home className="w-5 h-5" /> Retour à l'accueil
         </button>
       </div>
     </div>

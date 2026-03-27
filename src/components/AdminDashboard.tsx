@@ -2,15 +2,15 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   Store, ShoppingBag, BarChart3, Users, 
-  Plus, CheckCircle2, MapPin, Phone, Mail, ChevronRight, Package, Edit2, X,
-  Truck, Factory, Box, CheckCheck, Clock 
+  Plus, CheckCircle2, MapPin, ChevronRight, Package, Edit2, X,
+  Truck, Factory, Box, CheckCheck
 } from 'lucide-react';
 
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('commandes');
   
   // Nouveaux sous-onglets logistiques
-  const [commandesSubTab, setCommandesSubTab] = useState('abattoir'); // 'total', 'abattoir', 'transit', 'mosquee'
+  const [commandesSubTab, setCommandesSubTab] = useState('abattoir'); 
   
   const [reservations, setReservations] = useState<any[]>([]);
   const [mosquees, setMosquees] = useState<any[]>([]);
@@ -19,16 +19,37 @@ export function AdminDashboard() {
   // Modal Mosquées
   const [isMosqueeModalOpen, setIsMosqueeModalOpen] = useState(false);
   const [editingMosqueeId, setEditingMosqueeId] = useState<string | null>(null);
+  
   const [mosqueeForm, setMosqueeForm] = useState({
-    nom: '', adresse: '', telephone: '', email: '', horaires: ''
+    nom: '', adresse: '', adminEmail: ''
   });
 
   useEffect(() => {
     fetchData();
+
+    // 🔴 MAGIE DU TEMPS RÉEL (REALTIME) ICI !
+    // On écoute tout ce qui se passe sur la table 'reservations'
+    const channel = supabase
+      .channel('admin-reservations-updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reservations' },
+        (payload) => {
+          console.log('🔄 Mise à jour détectée !', payload);
+          // Si un livreur ou une mosquée valide une commande, 
+          // on recharge automatiquement les données sans rafraîchir la page !
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    // Nettoyage à la fermeture
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchData = async () => {
-    setLoading(true);
     try {
       const { data: resData } = await supabase
         .from('reservations')
@@ -51,28 +72,67 @@ export function AdminDashboard() {
 
   // --- GESTION DES MOSQUÉES ---
   const openCreateModal = () => {
-    setMosqueeForm({ nom: '', adresse: '', telephone: '', email: '', horaires: '' });
+    setMosqueeForm({ nom: '', adresse: '', adminEmail: '' });
     setEditingMosqueeId(null);
     setIsMosqueeModalOpen(true);
   };
 
-  const openEditModal = (mosquee: any) => {
+  const openEditModal = async (mosquee: any) => {
     setMosqueeForm({
-      nom: mosquee.nom || '', adresse: mosquee.adresse || '', telephone: mosquee.telephone || '',
-      email: mosquee.email || '', horaires: mosquee.horaires || ''
+      nom: mosquee.nom || '', 
+      adresse: mosquee.adresse || '', 
+      adminEmail: ''
     });
     setEditingMosqueeId(mosquee.id);
     setIsMosqueeModalOpen(true);
+
+    const { data: adminData } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('mosquee_id', mosquee.id)
+      .single(); 
+      
+    if (adminData) {
+      setMosqueeForm(prev => ({ ...prev, adminEmail: adminData.email }));
+    }
   };
 
   const handleSaveMosquee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const { adminEmail, ...mosqueeData } = mosqueeForm;
+      let currentMosqueeId = editingMosqueeId;
+
       if (editingMosqueeId) {
-        await supabase.from('mosquees').update(mosqueeForm).eq('id', editingMosqueeId);
+        const { error } = await supabase.from('mosquees').update(mosqueeData).eq('id', editingMosqueeId);
+        if (error) throw error;
       } else {
-        await supabase.from('mosquees').insert([mosqueeForm]);
+        const { data: newMosquee, error } = await supabase.from('mosquees').insert([mosqueeData]).select().single();
+        if (error) throw error;
+        currentMosqueeId = newMosquee.id;
       }
+
+      if (adminEmail && currentMosqueeId) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id, email')
+          .eq('email', adminEmail)
+          .single();
+
+        if (profile) {
+          const { error: updateRoleError } = await supabase
+            .from('profiles')
+            .update({ role: 'mosquee_admin', mosquee_id: currentMosqueeId })
+            .eq('id', profile.id);
+
+          if (!updateRoleError) {
+            alert(`Succès ! La mosquée a été enregistrée et ${adminEmail} est maintenant son administrateur.`);
+          }
+        } else {
+          alert(`La mosquée a été enregistrée.\n\nAucun compte trouvé pour "${adminEmail}". L'utilisateur doit d'abord créer un compte.`);
+        }
+      }
+
       setIsMosqueeModalOpen(false);
       fetchData();
     } catch (error: any) {
@@ -83,19 +143,21 @@ export function AdminDashboard() {
   // --- LOGISTIQUE DES COMMANDES ---
   const updateStatus = async (id: string, nouveauStatut: string) => {
     try {
+      // Optimisation : On met à jour l'interface immédiatement (pour la réactivité)
+      setReservations(prev => prev.map(res => res.id === id ? { ...res, statut: nouveauStatut } : res));
+      
       const { error } = await supabase
         .from('reservations')
         .update({ statut: nouveauStatut })
         .eq('id', id);
         
       if (error) throw error;
-      fetchData();
     } catch (error: any) {
       alert("Erreur de mise à jour : " + error.message);
+      fetchData(); // On recharge en cas d'erreur
     }
   };
 
-  // Filtrage avancé selon l'étape logistique
   const filteredReservations = reservations.filter(res => {
     const statut = res.statut || 'en_attente';
     if (commandesSubTab === 'total') return true;
@@ -111,7 +173,6 @@ export function AdminDashboard() {
   return (
     <div className="min-h-screen bg-slate-50 flex">
       
-      {/* SIDEBAR */}
       <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shadow-2xl z-10 hidden md:flex fixed h-full">
         <div className="p-6 border-b border-slate-800">
           <h1 className="text-2xl font-black text-white flex items-center gap-2">
@@ -128,20 +189,17 @@ export function AdminDashboard() {
         </nav>
       </aside>
 
-      {/* CONTENU PRINCIPAL */}
       <main className="flex-1 md:ml-64 overflow-y-auto min-h-screen">
         <div className="p-8 max-w-7xl mx-auto">
           
-          {loading ? (
+          {loading && reservations.length === 0 ? (
             <div className="flex items-center justify-center h-64 text-slate-400">Chargement des données...</div>
           ) : (
             <>
-              {/* ONGLET : LOGISTIQUE / COMMANDES */}
               {activeTab === 'commandes' && (
                 <div className="animate-[fadeIn_0.3s_ease-out]">
                   <h2 className="text-3xl font-black text-slate-900 mb-6">Suivi Logistique</h2>
                   
-                  {/* BARRE DE PROGRESSION LOGISTIQUE */}
                   <div className="flex gap-3 mb-8 bg-white p-2 rounded-2xl shadow-sm border border-slate-100 overflow-x-auto">
                     <button onClick={() => setCommandesSubTab('abattoir')} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all whitespace-nowrap ${commandesSubTab === 'abattoir' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
                       <Factory className="w-4 h-4"/> 1. À l'abattoir ({reservations.filter(r => (r.statut || 'en_attente') === 'en_attente').length})
@@ -158,7 +216,6 @@ export function AdminDashboard() {
                     </button>
                   </div>
 
-                  {/* TABLEAU DES COMMANDES */}
                   <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full text-left border-collapse">
@@ -167,7 +224,7 @@ export function AdminDashboard() {
                             <th className="p-4 font-bold text-sm uppercase tracking-wider">ID & Client</th>
                             <th className="p-4 font-bold text-sm uppercase tracking-wider">Contenu</th>
                             <th className="p-4 font-bold text-sm uppercase tracking-wider">Destination</th>
-                            <th className="p-4 font-bold text-sm uppercase tracking-wider">Statut Logistique</th>
+                            <th className="p-4 font-bold text-sm uppercase tracking-wider">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -193,7 +250,7 @@ export function AdminDashboard() {
                                 </td>
                                 <td className="p-4">
                                   
-                                  {/* WORKFLOW LOGISTIQUE */}
+                                  {/* C'est CE bouton qui expédie ! Il met le statut 'en_livraison' (en transit) */}
                                   {statut === 'en_attente' && (
                                     <button onClick={() => updateStatus(res.id, 'en_livraison')} className="text-sm bg-slate-900 text-white hover:bg-slate-800 px-4 py-2 rounded-xl font-bold transition-all flex items-center gap-2 shadow-sm">
                                       <Truck className="w-4 h-4"/> Expédier (Camion)
@@ -201,20 +258,20 @@ export function AdminDashboard() {
                                   )}
 
                                   {statut === 'en_livraison' && (
-                                    <button onClick={() => updateStatus(res.id, 'a_recuperer')} className="text-sm bg-amber-500 text-white hover:bg-amber-400 px-4 py-2 rounded-xl font-bold transition-all flex items-center gap-2 shadow-sm shadow-amber-500/20">
-                                      <Box className="w-4 h-4"/> Réceptionner à la Mosquée
-                                    </button>
+                                    <span className="text-sm text-amber-600 bg-amber-50 px-4 py-2 rounded-xl font-bold flex items-center gap-2 w-max border border-amber-200">
+                                      <Truck className="w-4 h-4"/> En cours de livraison...
+                                    </span>
                                   )}
 
                                   {statut === 'a_recuperer' && (
-                                    <button onClick={() => updateStatus(res.id, 'termine')} className="text-sm bg-emerald-500 text-white hover:bg-emerald-400 px-4 py-2 rounded-xl font-bold transition-all flex items-center gap-2 shadow-sm shadow-emerald-500/20">
-                                      <CheckCircle2 className="w-4 h-4"/> Remettre au client
-                                    </button>
+                                    <span className="text-sm text-blue-600 bg-blue-50 px-4 py-2 rounded-xl font-bold flex items-center gap-2 w-max border border-blue-200">
+                                      <Store className="w-4 h-4"/> Arrivé à la mosquée
+                                    </span>
                                   )}
 
                                   {statut === 'termine' && (
                                     <span className="text-sm bg-slate-100 text-slate-500 px-4 py-2 rounded-xl font-bold flex items-center gap-2 w-max border border-slate-200">
-                                      <CheckCheck className="w-4 h-4"/> Commande retirée
+                                      <CheckCheck className="w-4 h-4"/> Remis au client
                                     </span>
                                   )}
 
@@ -232,7 +289,7 @@ export function AdminDashboard() {
                 </div>
               )}
 
-              {/* ONGLET : MOSQUÉES */}
+              {/* AUTRES ONGLETS (Mosquées, Stats...) MASQUÉS POUR GAGNER DE LA PLACE */}
               {activeTab === 'mosquees' && (
                 <div className="animate-[fadeIn_0.3s_ease-out]">
                   <h2 className="text-3xl font-black text-slate-900 mb-8">Points de Retrait (Mosquées)</h2>
@@ -250,11 +307,6 @@ export function AdminDashboard() {
                         <h3 className="text-xl font-black text-slate-900 mb-2 pr-10">{mosquee.nom}</h3>
                         <div className="space-y-3 mt-auto pt-4 text-sm font-medium text-slate-600">
                           <p className="flex items-start gap-2"><MapPin className="w-4 h-4 text-slate-400 shrink-0 mt-0.5"/> <span className="line-clamp-2">{mosquee.adresse}</span></p>
-                          {mosquee.telephone && <p className="flex items-center gap-2"><Phone className="w-4 h-4 text-slate-400 shrink-0"/> {mosquee.telephone}</p>}
-                          {mosquee.email && <p className="flex items-center gap-2 truncate"><Mail className="w-4 h-4 text-slate-400 shrink-0"/> {mosquee.email}</p>}
-                        </div>
-                        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg">
-                          <Clock className="w-4 h-4"/><span className="truncate">{mosquee.horaires || "Horaires non renseignés"}</span>
                         </div>
                       </div>
                     ))}
@@ -262,7 +314,6 @@ export function AdminDashboard() {
                 </div>
               )}
 
-              {/* ONGLET : STATISTIQUES */}
               {activeTab === 'statistiques' && (
                 <div className="animate-[fadeIn_0.3s_ease-out]">
                   <h2 className="text-3xl font-black text-slate-900 mb-8">Statistiques Globales</h2>
@@ -274,7 +325,6 @@ export function AdminDashboard() {
                 </div>
               )}
 
-              {/* ONGLET : UTILISATEURS */}
               {activeTab === 'utilisateurs' && (
                 <div className="animate-[fadeIn_0.3s_ease-out] flex flex-col items-center justify-center h-[60vh] text-center">
                   <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mb-6"><Users className="w-10 h-10 text-slate-400" /></div>
@@ -304,26 +354,29 @@ export function AdminDashboard() {
             <form onSubmit={handleSaveMosquee} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Nom de la mosquée *</label>
-                <input type="text" required value={mosqueeForm.nom} onChange={e => setMosqueeForm({...mosqueeForm, nom: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Ex: Mosquée de la Paix" />
+                <input type="text" required value={mosqueeForm.nom} onChange={e => setMosqueeForm({...mosqueeForm, nom: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" />
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Adresse complète *</label>
-                <input type="text" required value={mosqueeForm.adresse} onChange={e => setMosqueeForm({...mosqueeForm, adresse: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="123 rue de la République..." />
+                <input type="text" required value={mosqueeForm.adresse} onChange={e => setMosqueeForm({...mosqueeForm, adresse: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Téléphone</label>
-                  <input type="tel" value={mosqueeForm.telephone} onChange={e => setMosqueeForm({...mosqueeForm, telephone: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="06 12 34 56 78" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Email</label>
-                  <input type="email" value={mosqueeForm.email} onChange={e => setMosqueeForm({...mosqueeForm, email: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="contact@mosquee.fr" />
-                </div>
+
+              <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl mt-4">
+                <label className="block text-sm font-bold text-emerald-800 mb-1">
+                  Email de l'administrateur (Optionnel)
+                </label>
+                <input 
+                  type="email" 
+                  value={mosqueeForm.adminEmail} 
+                  onChange={e => setMosqueeForm({...mosqueeForm, adminEmail: e.target.value})} 
+                  className="w-full px-4 py-2 bg-white border border-emerald-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-sm" 
+                  placeholder="admin@mosquee.fr" 
+                />
+                <p className="text-xs text-emerald-700 mt-2 leading-relaxed">
+                  Si un compte existe avec cet email, il sera automatiquement nommé administrateur de cette mosquée (rôle: <b>mosquee_admin</b>).
+                </p>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Horaires de retrait</label>
-                <input type="text" value={mosqueeForm.horaires} onChange={e => setMosqueeForm({...mosqueeForm, horaires: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Ex: Jour de l'Aïd de 10h à 14h" />
-              </div>
+
               <div className="pt-4 mt-6 border-t border-slate-100 flex gap-3">
                 <button type="button" onClick={() => setIsMosqueeModalOpen(false)} className="flex-1 px-4 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">Annuler</button>
                 <button type="submit" className="flex-[2] px-4 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-600/20">
@@ -339,7 +392,6 @@ export function AdminDashboard() {
   );
 }
 
-// --- Composants Utilitaires ---
 function SidebarButton({ icon: Icon, label, active, onClick }: { icon: any, label: string, active: boolean, onClick: () => void }) {
   return (
     <button onClick={onClick} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${active ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
