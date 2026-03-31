@@ -1,9 +1,0 @@
-{
-  "name": "monbelier-api",
-  "version": "1.0.0",
-  "private": true,
-  "dependencies": {
-    "@supabase/supabase-js": "^2.57.4",
-    "stripe": "^14.0.0"
-  }
-}
