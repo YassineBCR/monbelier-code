@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 interface Profile {
   id: string;
   email: string;
-  role: 'admin' | 'livreur' | 'client';
+  role: 'admin' | 'livreur' | 'client' | 'abattoir' | 'mosquee_admin';
   nom: string | null;
   telephone: string | null;
 }
@@ -26,41 +26,56 @@ interface AuthContextType {
   isClient: boolean;
 }
 
+export function getRedirectPath(role: string): string {
+  const map: Record<string, string> = {
+    admin:         '/admin/global',
+    abattoir:      '/abattoir',
+    livreur:       '/livreur',
+    mosquee_admin: '/mosquee',
+    client:        '/reservation',
+  };
+  return map[role] || '/';
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
+  const [user, setUser]                         = useState<User | null>(null);
+  const [profile, setProfile]                   = useState<Profile | null>(null);
+  const [loading, setLoading]                   = useState(true);
+  const [isRecoveringPassword, setIsRecovering] = useState(false);
 
   useEffect(() => {
-    // Récupère la session au chargement
+    // Vérifie si l'URL contient un token de recovery (#type=recovery)
+    if (window.location.hash.includes('type=recovery')) {
+      setIsRecovering(true);
+    }
+
+    // Session initiale (supabase lit le token dans l'URL grâce à detectSessionFromUrl)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       if (session?.user) loadProfile(session.user.id);
       else setLoading(false);
     });
 
-    // Écoute les changements d'état auth
+    // Écoute tous les changements d'état auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
-        // L'utilisateur a cliqué sur le lien de reset dans l'email
-        setIsRecoveringPassword(true);
+        setIsRecovering(true);
+        setUser(session?.user ?? null);
+        setLoading(false);
+        return; // Pas de redirection, on attend que l'utilisateur change son mdp
       }
-
-      if (event === 'SIGNED_IN' && isRecoveringPassword) {
-        // Ne redirige pas automatiquement si on est en recovery
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setProfile(null);
+        setIsRecovering(false);
+        setLoading(false);
         return;
       }
-
       setUser(session?.user ?? null);
-      if (session?.user) {
-        loadProfile(session.user.id);
-      } else {
-        setProfile(null);
-        setLoading(false);
-      }
+      if (session?.user) loadProfile(session.user.id);
+      else { setProfile(null); setLoading(false); }
     });
 
     return () => subscription.unsubscribe();
@@ -69,15 +84,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = async (userId: string) => {
     try {
       const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
+        .from('profiles').select('*').eq('id', userId).maybeSingle();
       if (error) throw error;
       setProfile(data);
-    } catch (error) {
-      console.error('Erreur chargement profil:', error);
+    } catch (err) {
+      console.error('Erreur chargement profil:', err);
     } finally {
       setLoading(false);
     }
@@ -88,26 +99,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
-  const signUp = async (
-    email: string,
-    password: string,
-    nom: string
-  ): Promise<{ needsConfirmation: boolean }> => {
+  const signUp = async (email: string, password: string, nom: string): Promise<{ needsConfirmation: boolean }> => {
     const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { nom },
-        // L'URL vers laquelle Supabase redirige après confirmation d'email
-        emailRedirectTo: window.location.origin,
-      },
+      email, password,
+      options: { data: { nom }, emailRedirectTo: window.location.origin },
     });
     if (error) throw error;
-
-    // Si identities est vide → l'email est déjà enregistré mais non confirmé
-    // Si session est null → la confirmation par email est activée
-    const needsConfirmation = !data.session;
-    return { needsConfirmation };
+    return { needsConfirmation: !data.session };
   };
 
   const signOut = async () => {
@@ -117,9 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resetPassword = async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      // Supabase redirige vers cette URL après le clic dans l'email
-      // L'event PASSWORD_RECOVERY sera déclenché dans onAuthStateChange
-      redirectTo: window.location.origin,
+      redirectTo: `${window.location.origin}/login`,
     });
     if (error) throw error;
   };
@@ -127,31 +123,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updatePassword = async (password: string) => {
     const { error } = await supabase.auth.updateUser({ password });
     if (error) throw error;
-    setIsRecoveringPassword(false);
+    setIsRecovering(false);
+    window.history.replaceState(null, '', window.location.pathname);
   };
 
-  const value: AuthContextType = {
-    user,
-    profile,
-    loading,
-    signIn,
-    signUp,
-    signOut,
-    resetPassword,
-    updatePassword,
-    isRecoveringPassword,
-    isAdmin: profile?.role?.trim().toLowerCase() === 'admin',
-    isLivreur: profile?.role?.trim().toLowerCase() === 'livreur',
-    isClient: profile?.role?.trim().toLowerCase() === 'client',
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{
+      user, profile, loading, signIn, signUp, signOut,
+      resetPassword, updatePassword, isRecoveringPassword,
+      isAdmin:   profile?.role === 'admin',
+      isLivreur: profile?.role === 'livreur',
+      isClient:  profile?.role === 'client',
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth doit être utilisé dans un AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth doit être utilisé dans un AuthProvider');
+  return ctx;
 }
