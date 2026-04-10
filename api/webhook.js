@@ -1,57 +1,67 @@
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-const stripe   = new Stripe(process.env.STRIPE_SECRET_KEY);
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// IMPORTANT : Vercel doit recevoir le raw body pour que Stripe puisse vérifier la signature
-export const config = { api: { bodyParser: false } };
+// Utilise la clé SERVICE ROLE pour passer outre les règles RLS de Supabase depuis le backend
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY 
+);
 
-async function getRawBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on('data', (chunk) => chunks.push(chunk));
-    req.on('end',  () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
+// DÉSACTIVER LE BODY PARSER DE VERCEL POUR LE WEBHOOK
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+// Fonction pour récupérer le buffer brut de la requête (requis par Stripe)
+async function getRawBody(readable) {
+  const chunks = [];
+  for await (const chunk of readable) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end('Method not allowed');
+  if (req.method !== 'POST') {
+    return res.status(405).send('Méthode non autorisée');
+  }
 
-  const rawBody = await getRawBody(req);
-  const sig     = req.headers['stripe-signature'];
+  const payload = await getRawBody(req);
+  const signature = req.headers['stripe-signature'];
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
   let event;
+
   try {
-    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(payload, signature, endpointSecret);
   } catch (err) {
-    console.error('Webhook signature error:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    console.error(`Erreur de validation du Webhook: ${err.message}`);
+    return res.status(400).send(`Erreur Webhook: ${err.message}`);
   }
 
-  // Idempotence : vérifie si l'événement a déjà été traité
-  const { data: existing } = await supabase
-    .from('stripe_events')
-    .select('id')
-    .eq('id', event.id)
-    .single();
-
-  if (existing) return res.status(200).send('Already processed');
-
-  // Enregistre l'événement
-  await supabase.from('stripe_events').insert([{ id: event.id, type: event.type }]);
-
-  // Gère le succès du paiement
+  // Traiter l'événement quand le paiement est réussi
   if (event.type === 'checkout.session.completed') {
-    const session       = event.data.object;
-    const reservationId = session.client_reference_id;
+    const session = event.data.object;
+    const orderId = session.metadata.order_id; // L'ID passé dans le composant React
 
-    await supabase
-      .from('reservations')
-      .update({ statut_paiement: 'paye' })
-      .eq('id', reservationId);
+    if (orderId) {
+      // Met à jour la commande dans Supabase comme "payée"
+      const { error } = await supabase
+        .from('orders') // Remplace 'orders' par le nom exact de ta table
+        .update({ payment_status: 'paid', status: 'confirmed' })
+        .eq('id', orderId);
+
+      if (error) {
+        console.error('Erreur de mise à jour Supabase:', error);
+        return res.status(500).json({ error: 'Erreur BDD' });
+      }
+    }
   }
 
-  res.status(200).send('OK');
+  // Toujours répondre 200 à Stripe pour confirmer la réception
+  res.status(200).json({ received: true });
 }

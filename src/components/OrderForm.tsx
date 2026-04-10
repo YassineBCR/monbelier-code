@@ -72,24 +72,47 @@ export function OrderForm({ onBack }: OrderFormProps) {
 
       if (submitError) throw submitError;
 
-      // 2. Appel de la fonction Edge Supabase pour créer la session Stripe
-      const { data, error: funcError } = await supabase.functions.invoke('create-payment-intent', {
-        body: { 
-          reservationId: newOrderData.id, 
-          quantite: formData.quantite,
-          email: formData.client_email 
-        }
+      // 2. Appel de l'API Vercel au lieu de la Edge Function Supabase
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items: [
+            {
+              price_data: {
+                currency: 'eur',
+                product_data: {
+                  name: "Agneau de l'Aïd (Carcasse entière)",
+                },
+                unit_amount: prixUnitaire * 100, // Stripe attend le montant en centimes
+              },
+              quantity: formData.quantite,
+            }
+          ],
+          customer_email: formData.client_email,
+          metadata: {
+            order_id: newOrderData.id // Permet au Webhook Stripe de mettre à jour la bonne commande
+          }
+        }),
       });
 
-      if (funcError || !data?.sessionId) {
-        throw new Error(funcError?.message || "Erreur lors de la connexion à Stripe");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur lors de la création de la session Stripe");
       }
 
       // 3. Redirection vers la vraie page de paiement Stripe
-      const stripe = await stripePromise;
-      await stripe?.redirectToCheckout({ sessionId: data.sessionId });
+      if (data.url) {
+        window.location.href = data.url; 
+      } else {
+        throw new Error("L'URL de paiement n'a pas été générée.");
+      }
 
     } catch (err: any) {
+      console.error("Erreur Stripe:", err);
       setError(err.message || 'Erreur lors de la validation de la commande');
       setLoading(false); // On arrête le chargement seulement en cas d'erreur
     }
